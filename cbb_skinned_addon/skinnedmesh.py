@@ -104,8 +104,8 @@ class ImportSkinnedMesh(Operator, ImportHelper):
         mesh_material_file_name: str = ""
         mesh_material_name: str = ""
 
-        ImportUtils.debug_print(self, "[get_texture_directory_and_name] method")
-        ImportUtils.debug_print(self, f"File_path used: {file_path}")
+        ImportUtils.debug_print(self.debug, "[get_texture_directory_and_name] method")
+        ImportUtils.debug_print(self.debug, f"File_path used: {file_path}")
 
         def get_material_file_and_name(xml_root_element):
             if xml_root_element is not None:
@@ -115,9 +115,9 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                         if item_child.tag == "Mesh":
                             mesh_attribute: str = item_child.get("value").lstrip("/")
                             if mesh_attribute is not None:
-                                ImportUtils.debug_print(self, f"Compared files: \n {mesh_attribute.casefold()} \n {ntpath.basename(file_path).casefold()}")
+                                ImportUtils.debug_print(self.debug, f"Compared files: \n {mesh_attribute.casefold()} \n {ntpath.basename(file_path).casefold()}")
                                 if mesh_attribute.casefold() == ntpath.basename(file_path).casefold():
-                                    ImportUtils.debug_print(self, f"Found match in mesh attribute and file name.")
+                                    ImportUtils.debug_print(self.debug, f"Found match in mesh attribute and file name.")
                                     for item_child_for_mesh in item_element:
                                         if item_child_for_mesh.tag == "Material":
                                             material_attibute = item_child_for_mesh.get("value").lstrip("/")
@@ -130,11 +130,11 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                                     if item_child_for_mesh.tag == "Name":
                                         material_attibute = item_child_for_mesh.get("value")
                                         if material_attibute is not None:
-                                            ImportUtils.debug_print(self, f"Model of name: {material_attibute} failed to give value of Mesh tag.")
+                                            ImportUtils.debug_print(self.debug, f"Model of name: {material_attibute} failed to give value of Mesh tag.")
             return "", ""
         
         for file in ImportUtils.find_single_xml_files(self.directory):
-            ImportUtils.debug_print(self, f"Trying to find .material.xml in the file {ntpath.basename(file)}")
+            ImportUtils.debug_print(self.debug, f"Trying to find .material.xml in the file {ntpath.basename(file)}")
             filepath: str = self.directory + ntpath.basename(file)
             mesh_material_file_name, mesh_material_name = get_material_file_and_name(ImportUtils.read_xml_file(self, filepath, f"Error while trying to read source .xml file at [{filepath}]"))
             if mesh_material_file_name != "":
@@ -194,8 +194,8 @@ class ImportSkinnedMesh(Operator, ImportHelper):
         mesh_animation_file_name: str = ""
         mesh_animation_name: str = ""
 
-        ImportUtils.debug_print(self, "[get_skeleton_name] method")
-        ImportUtils.debug_print(self, f"File_path used: {file_path}")
+        ImportUtils.debug_print(self.debug, "[get_skeleton_name] method")
+        ImportUtils.debug_print(self.debug, f"File_path used: {file_path}")
 
         def get_animation_file_and_name(xml_root_element: ET.Element):
             if xml_root_element is not None:
@@ -205,9 +205,9 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                         if item_child.tag == "Mesh":
                             mesh_attribute: str = item_child.get("value").lstrip("/")
                             if mesh_attribute is not None:
-                                ImportUtils.debug_print(self, f"Compared files: \n {mesh_attribute.casefold()} \n {ntpath.basename(file_path).casefold()}")
+                                ImportUtils.debug_print(self.debug, f"Compared files: \n {mesh_attribute.casefold()} \n {ntpath.basename(file_path).casefold()}")
                                 if mesh_attribute.casefold() == ntpath.basename(file_path).casefold():
-                                    ImportUtils.debug_print(self, f"Found match in mesh attribute and file name.")
+                                    ImportUtils.debug_print(self.debug, f"Found match in mesh attribute and file name.")
                                     animation_element = xml_root_element.find(".//Animation")
                                     if animation_element is not None:
                                         animation_attribute = animation_element.get("value")
@@ -216,17 +216,17 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                                             mesh_animation_name = animation_attribute.lstrip("/").split("|")[1]
                                             return mesh_animation_file_name, mesh_animation_name
                                     else:
-                                        ImportUtils.debug_print(self, f"Animation element could not be found inside a .xml source file.")
+                                        ImportUtils.debug_print(self.debug, f"Animation element could not be found inside a .xml source file.")
                             else:
                                 for item_child_for_mesh in item_element:
                                     if item_child_for_mesh.tag == "Name":
                                         name_attribute = item_child_for_mesh.get("value")
                                         if name_attribute is not None:
-                                            ImportUtils.debug_print(self, f"Model of name: {name_attribute} failed to give value of Mesh tag.")
+                                            ImportUtils.debug_print(self.debug, f"Model of name: {name_attribute} failed to give value of Mesh tag.")
             return "", ""
         
         for file in ImportUtils.find_single_xml_files(self.directory):
-            ImportUtils.debug_print(self, f"Trying to find .animation.xml in the file {ntpath.basename(file)}")
+            ImportUtils.debug_print(self.debug, f"Trying to find .animation.xml in the file {ntpath.basename(file)}")
             filepath: str = self.directory + ntpath.basename(file)
             mesh_animation_file_name, mesh_animation_name = get_animation_file_and_name(ImportUtils.read_xml_file(self, filepath, f"Error while trying to read source .xml file at [{filepath}]"))
             if mesh_animation_file_name != "":
@@ -263,7 +263,7 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                     filepath: str = self.directory + file.name
                     pure_file_name: str = ntpath.basename(filepath).split(".")[0]
                     file_base_name: str = ntpath.basename(file.name).rsplit(".", 1)[0].split("_")[0]
-                    ImportUtils.debug_print(self, f"Directory: {self.directory} \n File name: {file.name} \n Pure file name: {pure_file_name} \n File base name: {file_base_name}")
+                    ImportUtils.debug_print(self.debug, f"Directory: {self.directory} \n File name: {file.name} \n Pure file name: {pure_file_name} \n File base name: {file_base_name}")
                     skeleton_name = ""
                     target_armature: bpy.types.Armature = None
                     if self.apply_to_armature_in_selected == False:
@@ -273,7 +273,7 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                                 break
                         if target_armature is None:
                             skeleton_name = ImportSkinnedMesh.get_skeleton_name(filepath, self)
-                            ImportUtils.debug_print(self, f"Skeleton_name found: [{skeleton_name}]")
+                            ImportUtils.debug_print(self.debug, f"Skeleton_name found: [{skeleton_name}]")
                             if skeleton_name != "":
                                 for obj in bpy.context.scene.objects:
                                     if obj.name.casefold() == skeleton_name.casefold() and obj.type == "ARMATURE":
@@ -331,8 +331,8 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                             object_name = read_string()
                             vertex_amount = read_uint32()
                             triangle_amount = read_uint32()
-                            ImportUtils.debug_print(self, f"File [{pure_file_name}] vertex amount: {vertex_amount}")
-                            ImportUtils.debug_print(self, f"File [{pure_file_name}] triangle amount: {triangle_amount}")
+                            ImportUtils.debug_print(self.debug, f"File [{pure_file_name}] vertex amount: {vertex_amount}")
+                            ImportUtils.debug_print(self.debug, f"File [{pure_file_name}] triangle amount: {triangle_amount}")
                             offset += 24
                             
                             # Read the triangles
@@ -355,7 +355,7 @@ class ImportSkinnedMesh(Operator, ImportHelper):
 
                             # Read the normals
                             normal_amount = read_uint32()
-                            ImportUtils.debug_print(self, f"File [{pure_file_name}] normal amount: {normal_amount}")
+                            ImportUtils.debug_print(self.debug, f"File [{pure_file_name}] normal amount: {normal_amount}")
                             normals = []
                             for _ in range(normal_amount):
                                 x = read_float()
@@ -365,16 +365,16 @@ class ImportSkinnedMesh(Operator, ImportHelper):
 
                             # Read the texture coordinates
                             uv_amount = read_uint32()
-                            ImportUtils.debug_print(self, f"File [{pure_file_name}] uv coordinates amount: {uv_amount}")
+                            ImportUtils.debug_print(self.debug, f"File [{pure_file_name}] uv coordinates amount: {uv_amount}")
                             uvs = []
                             for _ in range(uv_amount):
                                 u = read_float()
                                 v = read_float()
-                                uvs.append((u, 1-v))
+                                uvs.append((u, -v))
 
                             # Read the bone weights
                             weight_amount = read_uint32()
-                            ImportUtils.debug_print(self, f"File [{pure_file_name}] weight structure amount: {weight_amount}")
+                            ImportUtils.debug_print(self.debug, f"File [{pure_file_name}] weight structure amount: {weight_amount}")
                             weights = []
                             for _ in range(weight_amount):
                                 total_bones_with_weights_amount = read_uint32()
@@ -405,8 +405,8 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                             # Trying to search a texture for a standalone mesh will get the first texture assigned, which usually is the _a variation for player characters.
                             texture_directory, texture_file_name = ImportSkinnedMesh.get_texture_directory_and_name(opened_file.name, self)
 
-                            ImportUtils.debug_print(self, f"texture_directory found: {texture_directory}")
-                            ImportUtils.debug_print(self, f"texture_file_name found: {texture_file_name}")
+                            ImportUtils.debug_print(self.debug, f"texture_directory found: {texture_directory}")
+                            ImportUtils.debug_print(self.debug, f"texture_file_name found: {texture_file_name}")
                             if texture_file_name != "":
                                 texture_path = ImportSkinnedMesh.find_texture_file(self.directory, texture_file_name, texture_directory, 10)
                                 if texture_path:
@@ -519,7 +519,7 @@ class ExportSkinnedMesh(Operator, ExportHelper):
             def export_skinnedmesh(mesh_object):
                 try:
                     filepath = bpy.path.ensure_ext(directory + "/" + mesh_object.name, self.filename_ext)
-                    ImportUtils.debug_print(self, f"Exporting mesh [{mesh_object.name}] to file at [{filepath}]")
+                    ImportUtils.debug_print(self.debug, f"Exporting mesh [{mesh_object.name}] to file at [{filepath}]")
 
                     mesh_armature: bpy.types.Armature = None
                     for mod in mesh_object.modifiers:
@@ -534,17 +534,20 @@ class ExportSkinnedMesh(Operator, ExportHelper):
                     else:
                         self.report({"ERROR"}, f"Target armature in ARMATURE modifier in the object [{mesh_object.name}] could not be found. Aborting this exportation.")
                         return
-
+                    
+                    for bone in mesh_armature.data.bones:
+                        bone_name_to_id[bone.name] = bone.get("bone_id")
+                        
                     mesh = mesh_object.data
                     vertices = mesh.vertices
                     polygons = mesh.polygons
                     loops = mesh.loops
                     uvs = mesh.uv_layers.active.data if mesh.uv_layers.active else None
 
-                    ImportUtils.debug_print(self, f"Object [{mesh_object.name}]'s vertex amount: [{len(vertices)}]")
-                    ImportUtils.debug_print(self, f"Object [{mesh_object.name}]'s polygon amount: [{len(polygons)}]")
-                    ImportUtils.debug_print(self, f"Object [{mesh_object.name}]'s loop amount: [{len(loops)}]")
-                    ImportUtils.debug_print(self, f"Object [{mesh_object.name}]'s uv amount: [{len(uvs)}]")
+                    ImportUtils.debug_print(self.debug, f"Object [{mesh_object.name}]'s vertex amount: [{len(vertices)}]")
+                    ImportUtils.debug_print(self.debug, f"Object [{mesh_object.name}]'s polygon amount: [{len(polygons)}]")
+                    ImportUtils.debug_print(self.debug, f"Object [{mesh_object.name}]'s loop amount: [{len(loops)}]")
+                    ImportUtils.debug_print(self.debug, f"Object [{mesh_object.name}]'s uv amount: [{len(uvs)}]")
 
                     if len(vertices) > 65536:
                         self.report({"ERROR"}, f"Error while exporting mesh [{mesh_object.name}]: mesh has more than 65536 vertices. The .SkinnedMesh file type can't work with more than this quantity.")
@@ -610,8 +613,8 @@ class ExportSkinnedMesh(Operator, ExportHelper):
                             new_poly.append(vertex_mapping[(loop.vertex_index, tuple(uv))])
                         new_polygons.append(new_poly)
 
-                    ImportUtils.debug_print(self, f"Object [{mesh_object.name}]'s vertex amount for export: [{len(exporter_vertices)}]")
-                    ImportUtils.debug_print(self, f"Object [{mesh_object.name}]'s polygon amount for export: [{len(new_polygons)}]")
+                    ImportUtils.debug_print(self.debug, f"Object [{mesh_object.name}]'s vertex amount for export: [{len(exporter_vertices)}]")
+                    ImportUtils.debug_print(self.debug, f"Object [{mesh_object.name}]'s polygon amount for export: [{len(new_polygons)}]")
 
                     if len(exporter_vertices) > 65536:
                         self.report({"ERROR"}, f"Error while exporting mesh [{mesh_object.name}]: mesh has {len(exporter_vertices)} vertices after vertex remapping, which is more than 65536 vertices.\nThis issue can be caused by the mesh's uv map having duplicate entries for each vertex. Consider remapping the mesh's UV map as a single continuous map or reduce the total amount of vertices.")
@@ -663,7 +666,7 @@ class ExportSkinnedMesh(Operator, ExportHelper):
 
                         # 9. All the vertices in the mesh (position: float, float, float)
                         for vertex in exporter_vertices:
-                            converted_position = ImportUtils.convert_position_blender_to_unity_vector(Vector((vertex.x, vertex.y, vertex.z, self.z_minus_is_forward)))
+                            converted_position = ImportUtils.convert_position_blender_to_unity_vector(Vector((vertex.x, vertex.y, vertex.z)), self.z_minus_is_forward)
                             file.write(struct.pack("3f", converted_position.x, converted_position.y, converted_position.z))
 
                         # 10. The amount of normals in the mesh (same as vertices)
@@ -671,7 +674,7 @@ class ExportSkinnedMesh(Operator, ExportHelper):
 
                         # 11. All the normals in the mesh
                         for normal in exporter_normals:
-                            converted_normal = ImportUtils.convert_position_blender_to_unity_vector(Vector((normal.x, normal.y, normal.z, self.z_minus_is_forward)))
+                            converted_normal = ImportUtils.convert_position_blender_to_unity_vector(Vector((normal.x, normal.y, normal.z)), self.z_minus_is_forward)
                             file.write(struct.pack("3f", converted_normal.x, converted_normal.y, converted_normal.z))
 
                         # 12. The amount of UV coordinates in the mesh (same as vertices)
@@ -679,7 +682,7 @@ class ExportSkinnedMesh(Operator, ExportHelper):
 
                         # 13. All UV coordinates of the mesh
                         for uv in exporter_uvs:
-                            file.write(struct.pack("2f", uv[0], 1 - uv[1]))
+                            file.write(struct.pack("2f", uv[0], -uv[1]))
 
                         # 14. The amount of weights in the mesh (same as vertices)
                         file.write(struct.pack("I", vertex_count))

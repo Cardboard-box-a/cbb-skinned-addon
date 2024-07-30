@@ -118,13 +118,13 @@ class ImportUtils(Operator):
         return Quaternion((rotation_collection[0], rotation_collection[1], rotation_collection[2], rotation_collection[3]))
     
     @staticmethod
-    def convert_position_unity_to_blender(pos_x, pos_y, pos_z, z_minus_is_forward = True) -> Vector:
+    def convert_position_unity_to_blender(pos_x, pos_y, pos_z, z_minus_is_forward) -> Vector:
         if z_minus_is_forward == True:
             return ImportUtils.__convert_position_unity_to_blender_z_minus_forward(pos_x, pos_y, pos_z)
         else:
             return ImportUtils.__convert_position_unity_to_blender_z_plus_forward(pos_x, pos_y, pos_z)
     @staticmethod
-    def convert_position_unity_to_blender_vector(position: Vector, z_minus_is_forward = True) -> Vector:
+    def convert_position_unity_to_blender_vector(position: Vector, z_minus_is_forward) -> Vector:
         return ImportUtils.convert_position_unity_to_blender(position.x, position.y, position.z, z_minus_is_forward)
     @staticmethod
     def __convert_position_unity_to_blender_z_plus_forward(pos_x, pos_y, pos_z) -> Vector:
@@ -135,7 +135,7 @@ class ImportUtils(Operator):
     
 
     @staticmethod      
-    def convert_quaternion_unity_to_blender(quat_x, quat_y, quat_z, quat_w, z_minus_is_forward = True) -> Quaternion:
+    def convert_quaternion_unity_to_blender(quat_x, quat_y, quat_z, quat_w, z_minus_is_forward) -> Quaternion:
         if z_minus_is_forward == True:
             return ImportUtils.__convert_quaternion_unity_to_blender_z_minus_forward(quat_x, quat_y, quat_z, quat_w)
         else:
@@ -149,37 +149,37 @@ class ImportUtils(Operator):
 
     
     @staticmethod
-    def convert_position_blender_to_unity(pos_x, pos_y, pos_z, z_minus_is_forward = True) -> Vector:
+    def convert_position_blender_to_unity(pos_x, pos_y, pos_z, z_minus_is_forward) -> Vector:
         if z_minus_is_forward == True:
             return ImportUtils.__convert_position_blender_to_unity_z_minus_forward(pos_x, pos_y, pos_z)
         else:
             return ImportUtils.__convert_position_blender_to_unity_z_plus_forward(pos_x, pos_y, pos_z)
     @staticmethod
-    def convert_position_blender_to_unity_vector(position: Vector, z_minus_is_forward = True) -> Vector:
+    def convert_position_blender_to_unity_vector(position: Vector, z_minus_is_forward) -> Vector:
         return ImportUtils.convert_position_blender_to_unity(position.x, position.y, position.z, z_minus_is_forward)
     @staticmethod
     def __convert_position_blender_to_unity_z_plus_forward(pos_x, pos_y, pos_z) -> Vector:
         return Vector((pos_x, pos_z, pos_y))
     @staticmethod
     def __convert_position_blender_to_unity_z_minus_forward(pos_x, pos_y, pos_z) -> Vector:
-        return Vector((-pos_x, -pos_z, pos_y))
+        return Vector((-pos_x, pos_z, -pos_y))
     
 
     @staticmethod      
-    def convert_quaternion_blender_to_unity(quat_x, quat_y, quat_z, quat_w, z_minus_is_forward = True) -> tuple[float, float, float, float]:
+    def convert_quaternion_blender_to_unity(quat_x, quat_y, quat_z, quat_w, z_minus_is_forward) -> tuple[float, float, float, float]:
         if z_minus_is_forward == True:
             return ImportUtils.__convert_quaternion_blender_to_unity_z_minus_forward(quat_x, quat_y, quat_z, quat_w)
         else:
             return ImportUtils.__convert_quaternion_blender_to_unity_z_plus_forward(quat_x, quat_y, quat_z, quat_w)
     @staticmethod      
-    def convert_quaternion_blender_to_unity_quaternion(rotation: Quaternion, z_minus_is_forward = True) -> tuple[float, float, float, float]:
-        return ImportUtils.convert_quaternion_blender_to_unity(rotation.x, rotation.z, rotation.y, rotation.w, z_minus_is_forward)
+    def convert_quaternion_blender_to_unity_quaternion(rotation: Quaternion, z_minus_is_forward) -> tuple[float, float, float, float]:
+        return ImportUtils.convert_quaternion_blender_to_unity(rotation.x, rotation.y, rotation.z, rotation.w, z_minus_is_forward)
     @staticmethod      
     def __convert_quaternion_blender_to_unity_z_plus_forward(quat_x, quat_y, quat_z, quat_w) -> tuple[float, float, float, float]:
         return (-quat_x, -quat_z, -quat_y, quat_w)
     @staticmethod      
     def __convert_quaternion_blender_to_unity_z_minus_forward(quat_x, quat_y, quat_z, quat_w) -> tuple[float, float, float, float]:
-        return (-quat_x, -quat_z, quat_y, -quat_w)
+        return (-quat_x, quat_z, -quat_y, -quat_w)
     
     
     @staticmethod
@@ -254,7 +254,7 @@ class ImportUtils(Operator):
 
         return True
     @staticmethod
-    def rebuild_armature_bone_ids(self: Operator, armature: bpy.types.Armature):
+    def rebuild_armature_bone_ids(self: Operator, armature: bpy.types.Armature, print_debug = False):
         bones: list[bpy.types.Bone] = armature.data.bones
         existing_ids = {bone.get("bone_id") for bone in bones if bone.get("bone_id") is not None}
 
@@ -275,7 +275,7 @@ class ImportUtils(Operator):
                 while next_id in existing_ids:
                     next_id += 1
                 bone["bone_id"] = next_id
-                ImportUtils.debug_print(self, f"Bone [{bone.name}] got reassigned the id [{next_id}]")
+                ImportUtils.debug_print(print_debug, f"Bone [{bone.name}] got reassigned the id [{next_id}]")
                 existing_ids.add(next_id)
             next_id += 1
 
@@ -293,8 +293,8 @@ class ImportUtils(Operator):
     
 
     @staticmethod
-    def debug_print(self, debug_string):
-        if self.debug == True:
+    def debug_print(should_print, debug_string):
+        if should_print == True:
             print(debug_string)
             # self.report({'INFO'}, debug_string)
 

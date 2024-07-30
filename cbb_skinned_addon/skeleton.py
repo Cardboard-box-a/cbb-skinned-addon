@@ -48,8 +48,8 @@ class ImportSkeleton(Operator, ImportHelper):
             if file.name.casefold().endswith(".Skeleton".casefold()):
                 filepath = self.directory + file.name
 
-                ImportUtils.debug_print(self, f"Importing skeleton from: {filepath}")
-                
+                ImportUtils.debug_print(self.debug, f"Importing skeleton from: {filepath}")
+
                 skeleton_data = SkeletonData.read_skeleton_data(self, filepath)
                 try:
                     # Create armature and enter edit mode
@@ -76,7 +76,7 @@ class ImportSkeleton(Operator, ImportHelper):
                         bone_local_matrices.append(Matrix.Identity(4))
                         bone_world_matrices.append(Matrix.Identity(4))
                     
-                    ImportUtils.debug_print(self, f"Created [{len(edit_bones)}] bones in Blender armature.")
+                    ImportUtils.debug_print(self.debug, f"Created [{len(edit_bones)}] bones in Blender armature.")
                     
                     def _process_bone(bone_id):
                         position = skeleton_data.bone_absolute_positions[bone_id]
@@ -134,14 +134,14 @@ class ImportSkeleton(Operator, ImportHelper):
                         bones[i].length = bone_lengths[i]
                         edit_bone = armature_obj.data.edit_bones[skeleton_data.bone_names[i]]
                         edit_bone.matrix = bone_world_matrices[i]
-                        ImportUtils.debug_print(self, f"Bone [{bones[i].name}] matrix rotation: [{bone_world_matrices[i].to_quaternion()}]")
-                        ImportUtils.debug_print(self, f"Bone [{bones[i].name}] as edit_bone matrix rotation: [{edit_bone.matrix.to_quaternion()}]")
+                        ImportUtils.debug_print(self.debug, f"Bone [{bones[i].name}] matrix rotation: [{bone_world_matrices[i].to_quaternion()}]")
+                        ImportUtils.debug_print(self.debug, f"Bone [{bones[i].name}] as edit_bone matrix rotation: [{edit_bone.matrix.to_quaternion()}]")
                         
                         if skeleton_data.bone_parent_ids[i] != 0xFFFFFFFF and i != 0:
                             # These bones are manually overriden in the original code to have no parent and their animations are given in world coordinates, so we fix these cases manually.
                             if bones[i].name.casefold() != "staffjoint2" and bones[i].name.casefold() != "r_handend1" and bones[i].name.casefold() != "l_handend1":
                                 bones[i].parent = bones[skeleton_data.bone_parent_ids[i]]
-                        ImportUtils.debug_print(self, f"Length of bone [{bones[i].name}]: {bones[i].length}")
+                        ImportUtils.debug_print(self.debug, f"Length of bone [{bones[i].name}]: {bones[i].length}")
 
                     bpy.context.view_layer.update()
                     bpy.ops.object.mode_set(mode="OBJECT")
@@ -214,7 +214,7 @@ class ExportSkeleton(Operator, ExportHelper):
         for scene_armature in selected_objects:
             def export_skeleton(armature_object: bpy.types.Armature):
                 filepath: str = bpy.path.ensure_ext(directory + armature_object.name, self.filename_ext)
-                ImportUtils.debug_print(self, f"Exporting armature [{armature_object.name}] to file at [{filepath}]")
+                ImportUtils.debug_print(self.debug, f"Exporting armature [{armature_object.name}] to file at [{filepath}]")
 
                 if ImportUtils.is_armature_valid(self, armature_object, True) == False:
                     return
@@ -240,7 +240,7 @@ class ExportSkeleton(Operator, ExportHelper):
                     for bone in bones:
                         bone_id = bone.get("bone_id")
                         bone_matrix: Matrix = bone.matrix_local
-
+                        
                         skeleton_data.bone_names[bone_id] = bone.name
                         skeleton_data.bone_parent_ids[bone_id] = bone.parent.get("bone_id") if bone.parent else 0xFFFFFFFF
                         skeleton_data.bone_absolute_positions[bone_id] = bone_matrix.to_translation()
@@ -285,7 +285,7 @@ class SkeletonData:
 
                 skeletonData.bone_count = struct.unpack("<I", f.read(4))[0]
                 f.seek(24, 1)
-                ImportUtils.debug_print(self, f"Bone count from source skeleton: {skeletonData.bone_count}")
+                ImportUtils.debug_print(self.debug, f"Bone count from source skeleton: {skeletonData.bone_count}")
 
                 for _ in range(skeletonData.bone_count):
                     bone_name_bytes = f.read(128)
@@ -304,23 +304,23 @@ class SkeletonData:
                 f.seek(12, 1)
 
                 for _ in range(skeletonData.bone_count):
-                    ImportUtils.debug_print(self, f"Bone name: [{skeletonData.bone_names[_]}]. ID and parent ID: [{_}] | [{skeletonData.bone_parent_ids[_]}]")
+                    ImportUtils.debug_print(self.debug, f"Bone name: [{skeletonData.bone_names[_]}]. ID and parent ID: [{_}] | [{skeletonData.bone_parent_ids[_]}]")
                     bone_position: tuple[float, float, float] = struct.unpack("<3f", f.read(12))
                     bone_scale: tuple[float, float, float] = struct.unpack("<3f", f.read(12))
                     bone_rotation: tuple[float, float, float, float] = struct.unpack("<4f", f.read(16))
-                    ImportUtils.debug_print(self, f"Bone position (before conversion): [{bone_position}]")
-                    ImportUtils.debug_print(self, f"Bone scale (no conversion is done): [{bone_scale}]")
-                    ImportUtils.debug_print(self, f"Bone rotation (before conversion): [{bone_rotation}]")
+                    ImportUtils.debug_print(self.debug, f"Bone position (before conversion): [{bone_position}]")
+                    ImportUtils.debug_print(self.debug, f"Bone scale (no conversion is done): [{bone_scale}]")
+                    ImportUtils.debug_print(self.debug, f"Bone rotation (before conversion): [{bone_rotation}]")
                     bone_position = ImportUtils.convert_position_unity_to_blender(bone_position[0], bone_position[1], bone_position[2], self.z_minus_is_forward)
                     bone_rotation = ImportUtils.convert_quaternion_unity_to_blender(bone_rotation[0], bone_rotation[1], bone_rotation[2], bone_rotation[3], self.z_minus_is_forward)
-                    ImportUtils.debug_print(self, f"Bone position (after conversion): [{bone_position}]")
-                    ImportUtils.debug_print(self, f"Bone rotation (after conversion): [{bone_rotation}]")
+                    ImportUtils.debug_print(self.debug, f"Bone position (after conversion): [{bone_position}]")
+                    ImportUtils.debug_print(self.debug, f"Bone rotation (after conversion): [{bone_rotation}]")
                     skeletonData.bone_absolute_positions.append(bone_position)
                     skeletonData.bone_absolute_scales.append(mathutils.Vector(bone_scale))
                     skeletonData.bone_absolute_rotations.append(bone_rotation)
                 
                 for bone_id in range(skeletonData.bone_count):
-                    ImportUtils.debug_print(self, f"Bone name: [{skeletonData.bone_names[bone_id]}], local data:")
+                    ImportUtils.debug_print(self.debug, f"Bone name: [{skeletonData.bone_names[bone_id]}], local data:")
                     if skeletonData.bone_parent_ids[bone_id] != 0xFFFFFFFF:
                         parent_bone_id = skeletonData.bone_parent_ids[bone_id]
                         skeletonData.bone_local_positions.append(ImportUtils.get_local_position(skeletonData.bone_absolute_positions[parent_bone_id], skeletonData.bone_absolute_rotations[parent_bone_id], skeletonData.bone_absolute_positions[bone_id]))
@@ -328,8 +328,8 @@ class SkeletonData:
                     else:
                         skeletonData.bone_local_positions.append(skeletonData.bone_absolute_positions[bone_id])
                         skeletonData.bone_local_rotations.append(skeletonData.bone_absolute_rotations[bone_id])
-                    ImportUtils.debug_print(self, f"Local position: [{skeletonData.bone_local_positions[bone_id]}]")
-                    ImportUtils.debug_print(self, f"Local rotation: [{skeletonData.bone_local_rotations[bone_id]}]")
+                    ImportUtils.debug_print(self.debug, f"Local position: [{skeletonData.bone_local_positions[bone_id]}]")
+                    ImportUtils.debug_print(self.debug, f"Local rotation: [{skeletonData.bone_local_rotations[bone_id]}]")
 
         except Exception as e:
             self.report({"ERROR"}, f"Failed to read file: {e}")
@@ -388,7 +388,7 @@ class SkeletonData:
             traceback.print_exc()
             return False
         
-        ImportUtils.debug_print(self, f"Skeleton written successfully to: [{filepath}]")
+        ImportUtils.debug_print(self.debug, f"Skeleton written successfully to: [{filepath}]")
         return True
     
     @staticmethod 

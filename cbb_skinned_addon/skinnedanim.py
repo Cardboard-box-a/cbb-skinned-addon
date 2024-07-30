@@ -52,8 +52,8 @@ class ImportSkinnedAnim(Operator, ImportHelper):
         skeleton_name = ""
         animation_name: str = ntpath.basename(file_path)
 
-        ImportUtils.debug_print(self, "[get_skeleton_name] method")
-        ImportUtils.debug_print(self, f"File_path used: {file_path}")
+        ImportUtils.debug_print(self.debug, "[get_skeleton_name] method")
+        ImportUtils.debug_print(self.debug, f"File_path used: {file_path}")
 
         def get_animation_file_and_name(xml_root_element: ET.Element):
             if xml_root_element is not None:
@@ -67,7 +67,7 @@ class ImportSkinnedAnim(Operator, ImportHelper):
             return "", ""
         
         for file in ImportUtils.find_single_xml_files(self.directory):
-            ImportUtils.debug_print(self, f"Trying to find .animation.xml in the file {ntpath.basename(file)}")
+            ImportUtils.debug_print(self.debug, f"Trying to find .animation.xml in the file {ntpath.basename(file)}")
             filepath: str = self.directory + ntpath.basename(file)
             anim_animation_file_name, anim_animation_name = get_animation_file_and_name(ImportUtils.read_xml_file(self, filepath, f"Error while trying to read source .xml file at [{filepath}]"))
             if anim_animation_file_name != "":
@@ -140,7 +140,7 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                             break
                     if target_armature is None:
                         skeleton_name = ImportSkinnedAnim.get_skeleton_name(filepath, self)
-                        ImportUtils.debug_print(self, f"Skeleton_name found: [{skeleton_name}]")
+                        ImportUtils.debug_print(self.debug, f"Skeleton_name found: [{skeleton_name}]")
                         if skeleton_name != "":
                             for obj in bpy.context.scene.objects:
                                 if obj.name.casefold() == skeleton_name.casefold() and obj.type == "ARMATURE":
@@ -268,14 +268,14 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                     self.report({"ERROR"}, f"Target armature and animation don't have the same amount of bones (Target has: [{len(target_armature.data.bones)}]. Animation has: [{anim_bone_amount}]). Aborting importation.")
                     return {"CANCELLED"}
 
-                ImportUtils.debug_print(self, f"[Animation Data: ]")
-                ImportUtils.debug_print(self, f"anim_bone_amount: {anim_bone_amount}")
-                ImportUtils.debug_print(self, f"total_frames: {total_frames}")
-                ImportUtils.debug_print(self, f"are_positions_relative_to_parent: {are_positions_relative_to_parent}")
-                ImportUtils.debug_print(self, f"number_of_bone_rotations_animated: {number_of_bone_rotations_animated}")
-                ImportUtils.debug_print(self, f"number_of_bone_positions_animated: {number_of_bone_positions_animated}")
-                ImportUtils.debug_print(self, f"number_of_bone_rotations_fixed: {number_of_bone_rotations_fixed}")
-                ImportUtils.debug_print(self, f"number_of_bone_positions_fixed: {number_of_bone_positions_fixed}")
+                ImportUtils.debug_print(self.debug, f"[Animation Data: ]")
+                ImportUtils.debug_print(self.debug, f"anim_bone_amount: {anim_bone_amount}")
+                ImportUtils.debug_print(self.debug, f"total_frames: {total_frames}")
+                ImportUtils.debug_print(self.debug, f"are_positions_relative_to_parent: {are_positions_relative_to_parent}")
+                ImportUtils.debug_print(self.debug, f"number_of_bone_rotations_animated: {number_of_bone_rotations_animated}")
+                ImportUtils.debug_print(self.debug, f"number_of_bone_positions_animated: {number_of_bone_positions_animated}")
+                ImportUtils.debug_print(self.debug, f"number_of_bone_rotations_fixed: {number_of_bone_rotations_fixed}")
+                ImportUtils.debug_print(self.debug, f"number_of_bone_positions_fixed: {number_of_bone_positions_fixed}")
                 try:
                     # Create animation action
                     action_name = ntpath.basename(self.directory + file.name).rsplit(".", 1)[0]
@@ -593,18 +593,18 @@ class ExportSkinnedAnim(Operator, ExportHelper):
                 correct_animated_rotation = ImportUtils.get_world_rotation(quat_bone_local_rotations[bone_id], pose_bone_rotation)
                 animated_rotations_by_bone.append(ImportUtils.convert_quaternion_blender_to_unity_quaternion(correct_animated_rotation, self.z_minus_is_forward))
         
-        ImportUtils.debug_print(self, f"Animation Data Collected:")
-        ImportUtils.debug_print(self, f"Animated Rotations By Bone:\n{animated_rotations_by_bone}")
-        ImportUtils.debug_print(self, f"Animated Positions By Bone:\n{animated_positions_by_bone}")
-        ImportUtils.debug_print(self, f"Fixed Positions By Bone:\n{fixed_positions_by_bone}")
-        ImportUtils.debug_print(self, f"Fixed Rotations By Bone:\n{fixed_rotations_by_bone}")
-        ImportUtils.debug_print(self, f"Bone Maps:")
-        ImportUtils.debug_print(self, f"Dynamic Position Bones:\n{dynamic_position_bones}")
-        ImportUtils.debug_print(self, f"Static Position Bones:\n{static_position_bones}")
-        ImportUtils.debug_print(self, f"Dynamic Rotation Bones:\n{dynamic_rotation_bones}")
-        ImportUtils.debug_print(self, f"Static Rotation Bones:\n{static_rotation_bones}")
-        ImportUtils.debug_print(self, f"Used In Frames Positions Flag:\n{used_in_frames_positions_flag}")
-        ImportUtils.debug_print(self, f"Used In Frames Rotations Flag:\n{used_in_frames_rotations_flag}")
+        ImportUtils.debug_print(self.debug, f"Animation Data Collected:")
+        ImportUtils.debug_print(self.debug, f"Animated Rotations By Bone:\n{animated_rotations_by_bone}")
+        ImportUtils.debug_print(self.debug, f"Animated Positions By Bone:\n{animated_positions_by_bone}")
+        ImportUtils.debug_print(self.debug, f"Fixed Positions By Bone:\n{fixed_positions_by_bone}")
+        ImportUtils.debug_print(self.debug, f"Fixed Rotations By Bone:\n{fixed_rotations_by_bone}")
+        ImportUtils.debug_print(self.debug, f"Bone Maps:")
+        ImportUtils.debug_print(self.debug, f"Dynamic Position Bones:\n{dynamic_position_bones}")
+        ImportUtils.debug_print(self.debug, f"Static Position Bones:\n{static_position_bones}")
+        ImportUtils.debug_print(self.debug, f"Dynamic Rotation Bones:\n{dynamic_rotation_bones}")
+        ImportUtils.debug_print(self.debug, f"Static Rotation Bones:\n{static_rotation_bones}")
+        ImportUtils.debug_print(self.debug, f"Used In Frames Positions Flag:\n{used_in_frames_positions_flag}")
+        ImportUtils.debug_print(self.debug, f"Used In Frames Rotations Flag:\n{used_in_frames_rotations_flag}")
 
         with open(filepath, 'wb') as file:
             # Helper function to write an integer
