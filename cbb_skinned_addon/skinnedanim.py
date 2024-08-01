@@ -31,19 +31,19 @@ class ImportSkinnedAnim(Operator, ImportHelper):
 
     apply_to_armature_in_selected: BoolProperty(
         name="Apply to armature in selected",
-        description="Enabling this option will make the import of the animation to target any armature present between currently selected objects.",
+        description="Enabling this option will make the import of the animation to target any armature present between currently selected objects",
         default=False
     )
 
     debug: BoolProperty(
         name="Debug import",
-        description="Enabling this option will make the importer print debug data to console.",
+        description="Enabling this option will make the importer print debug data to console",
         default=False
     )
 
     z_minus_is_forward: BoolProperty(
         name="Z- is forward",
-        description="Leave this option checked if you wish to work with Z- being the forward direction in Blender. If false, Z+ is considered forward.",
+        description="Leave this option checked if you wish to work with Z- being the forward direction in Blender. If false, Z+ is considered forward",
         default=True
     )
 
@@ -102,8 +102,6 @@ class ImportSkinnedAnim(Operator, ImportHelper):
         for file in self.files:
             if file.name.casefold().endswith(".SkinnedAnim".casefold()):
                 filepath: str = self.directory + file.name
-                # Initialize variables
-                armature_edit_bone_names = []
 
                 animation_target_base_name = ntpath.basename(self.directory + file.name).rsplit(".", 1)[0].split("_")[0]
 
@@ -146,17 +144,20 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                                 if obj.name.casefold() == skeleton_name.casefold() and obj.type == "ARMATURE":
                                     target_armature = obj
                                     break
-                    else:
-                        for obj in bpy.context.selected_objects:
-                            if obj.type == "ARMATURE":
+                else:
+                    for obj in bpy.context.selected_objects:
+                        if obj.type == "ARMATURE":
+                            if target_armature is None:
                                 target_armature = obj
-                                break
+                            else:
+                                self.report({"ERROR"}, f"More than one armature has been found in the current selection. The imported animation can only be assigned to one armature at a time.")
 
                 if not target_armature:
                     self.report({"ERROR"}, "No armature found in the scene for animation to import to.")
                     return {"CANCELLED"}
                 else:
-                    if ImportUtils.is_armature_valid(self, target_armature, False) == False:
+                    skeleton_data = SkeletonData.build_skeleton_from_armature(self, target_armature, False, False)
+                    if skeleton_data is None:
                         self.report({"ERROR"}, f"Armature [{target_armature}] which is the target of the imported animation has been found not valid. Aborting.")
                         return {"CANCELLED"}
 
@@ -262,10 +263,8 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                     traceback.print_exc()
                     return {"CANCELLED"}
 
-                if len(target_armature.data.bones) == anim_bone_amount:
-                    skeleton_data = SkeletonData.build_skeleton_from_armature(self, target_armature)
-                else:
-                    self.report({"ERROR"}, f"Target armature and animation don't have the same amount of bones (Target has: [{len(target_armature.data.bones)}]. Animation has: [{anim_bone_amount}]). Aborting importation.")
+                if skeleton_data.bone_count != anim_bone_amount:
+                    self.report({"ERROR"}, f"Target armature and animation don't have the same amount of bones (Target has: [{skeleton_data.bone_count}]. Animation has: [{anim_bone_amount}]). Aborting importation.")
                     return {"CANCELLED"}
 
                 ImportUtils.debug_print(self.debug, f"[Animation Data: ]")
@@ -280,9 +279,6 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                     # Create animation action
                     action_name = ntpath.basename(self.directory + file.name).rsplit(".", 1)[0]
                     action = bpy.data.actions.new(name=action_name)
-
-                    # Get the first skeleton armature
-                    
 
                     target_armature.animation_data_create().action = action
                     # target_armature.animation_data.action = action
@@ -439,7 +435,13 @@ class ExportSkinnedAnim(Operator, ExportHelper):
 
     export_all_actions: BoolProperty(
         name="Export all actions in armatures",
-        description="Enabling this option will make exporter export all actions in all selected armatures. Otherwise, only the current active action on all armatures will be exported.",
+        description="Enabling this option will make the exporter export all actions. Otherwise, only the current active action will be exported.",
+        default=False
+    )
+    
+    export_only_selected: BoolProperty(
+        name="Export only in selected",
+        description="Leave this option checked if you wish to export animations only among currently selected armatures",
         default=False
     )
 
@@ -454,28 +456,42 @@ class ExportSkinnedAnim(Operator, ExportHelper):
         description="Leave this option checked if you wish to work with Z- being the forward direction in Blender. If false, Z+ is considered forward.",
         default=True
     )
+    
+    only_deform_bones: BoolProperty(
+        name="Consider only deform bones (Recommended)",
+        description="Leave this option checked if you wish to consider only deform bones in armatures. Recommended in case you are using rigged armatures that have non-deforming bones",
+        default=True
+    )
 
     def execute(self, context):
         return self.export_animations(context, self.directory)
     
     def export_animations(self, context, directory):
-        # Step 1: Get armature objects
-        armatures = [obj for obj in bpy.context.selected_objects if obj.type == 'ARMATURE']
-        if not armatures:
-            armatures = [obj for obj in bpy.data.objects if obj.type == 'ARMATURE']
+        armatures_for_exportation = None
+        if self.export_only_selected == True:
+            armatures_for_exportation: list[bpy.types.Object] = [obj for obj in context.selected_objects if obj.type == "ARMATURE"]
+        else:
+            armatures_for_exportation = [obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE"]
+
+        if not armatures_for_exportation:
+            if self.export_only_selected == True:
+                self.report({"ERROR"}, f"There are no objects of type ARMATURE among currently selected objects. Aborting exportation.")
+            else:
+                self.report({"ERROR"}, f"There are no objects of type ARMATURE among scene objects. Aborting exportation.")
+            return {"CANCELLED"}
         
-        if not armatures:
-            print("No armature objects found. Aborting export.")
-            return
         
-        for armature in armatures:
-            if not ImportUtils.is_armature_valid(self, armature, True):
+        
+        for armature in armatures_for_exportation:
+            skeleton_data = SkeletonData.build_skeleton_from_armature(self, armature, self.only_deform_bones, True)
+            if not skeleton_data:
                 print(f"Validation failed for armature: {armature.name}. Skipping.")
                 continue
             
             actions = ExportSkinnedAnim.get_actions(armature, self.export_all_actions)
             for action in actions:
-                ExportSkinnedAnim.export_action(self, armature, action, directory, self.filename_ext)
+                ExportSkinnedAnim.export_action(self, armature, action, directory, self.filename_ext, self.only_deform_bones)
+                
         return {"FINISHED"}
 
     def get_actions(armature, export_all_actions):
@@ -485,26 +501,38 @@ class ExportSkinnedAnim(Operator, ExportHelper):
             return [armature.animation_data.action] if armature.animation_data and armature.animation_data.action else []
         
     @staticmethod
-    def export_action(self: "ExportSkinnedAnim", armature, action: Action, directory: str, filename_ext: str):
+    def export_action(self: "ExportSkinnedAnim", armature, action: Action, directory: str, filename_ext: str, only_deform_bones: bool):
         print(f"Exporting action {action.name} for armature {armature.name}")
-
+        old_active_object = bpy.context.view_layer.objects.active
+        old_selection = bpy.context.view_layer.objects.active.select_get()
+        
         for fcurve in action.fcurves:
             for kp in fcurve.keyframe_points:
-                print(f"Fcurve data [{fcurve.data_path}][{fcurve.array_index}]: kp[{(kp.co[0])}] data: [{kp.co[1]}]")
+                ImportUtils.debug_print(self.debug,f"Fcurve data [{fcurve.data_path}][{fcurve.array_index}]: kp[{(kp.co[0])}] data: [{kp.co[1]}]")
 
         filepath = bpy.path.ensure_ext(directory + "/" + action.name, filename_ext)
+        
         bpy.context.view_layer.objects.active = armature
+        old_object_mode = bpy.context.view_layer.objects.active.mode
+        
+        bpy.ops.object.mode_set(mode='POSE')
         bpy.context.view_layer.update()
         
-        bones: list[bpy.types.Bone] = sorted(armature.data.bones, key=lambda bone: bone["bone_id"])
+        bones: list[bpy.types.Bone] = []
+        if only_deform_bones:
+            bones = sorted([bone for bone in armature.data.bones if bone.use_deform], key=lambda bone: bone["bone_id"])
+        else:
+            bones: list[bpy.types.Bone] = sorted(armature.data.bones, key=lambda bone: bone["bone_id"])
+        
         pose_bones: list[bpy.types.PoseBone] = []
         for bone in bones:
             pose_bones.append(armature.pose.bones[bone.name])
 
-        animation_bone_amount = len(armature.data.bones)
+        animation_bone_amount = len(pose_bones)
         total_frames = int(action.frame_range[1] - action.frame_range[0])
-
-        animation_bone_amount = len(bones)
+        
+        skeleton_data = SkeletonData.build_skeleton_from_armature(self, armature, only_deform_bones, True)
+        """
         vec3_bone_local_positions = [mathutils.Vector((0,0,0))] * animation_bone_amount
         quat_bone_local_rotations = [mathutils.Quaternion.identity] * animation_bone_amount
         for bone in bones:
@@ -518,7 +546,7 @@ class ExportSkinnedAnim(Operator, ExportHelper):
             else:
                 vec3_bone_local_positions[bone_id] = edit_bone_position
                 quat_bone_local_rotations[bone_id] = edit_bone_rotation
-
+        """
         dynamic_position_bones: list[int] = []
         static_position_bones: list[int] = []
         dynamic_rotation_bones: list[int] = []
@@ -563,17 +591,17 @@ class ExportSkinnedAnim(Operator, ExportHelper):
 
         fixed_positions_by_bone: list[bpy.types.Vector] = []
         fixed_rotations_by_bone: list[bpy.types.Quaternion] = []
-        
+        bpy.context.scene.frame_set(0)
         for bone_id in static_position_bones:
             pose_bone = pose_bones[bone_id]
-            pose_bone_position = ImportUtils.get_pose_bone_location_at_frame(action, pose_bone.name, 0)
-            correct_animated_position = ImportUtils.get_world_position(vec3_bone_local_positions[bone_id], quat_bone_local_rotations[bone_id], pose_bone_position)
+            pose_bone_position = ImportUtils.get_pose_bone_location_at_frame_fast(armature, pose_bone.name)
+            correct_animated_position = ImportUtils.get_world_position(skeleton_data.bone_local_positions[bone_id], skeleton_data.bone_local_rotations[bone_id], pose_bone_position)
             fixed_positions_by_bone.append(ImportUtils.convert_position_blender_to_unity_vector(correct_animated_position, self.z_minus_is_forward))
         
         for bone_id in static_rotation_bones:
             pose_bone = pose_bones[bone_id]
-            pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame(action, pose_bone.name, 0)
-            correct_animated_rotation = ImportUtils.get_world_rotation(quat_bone_local_rotations[bone_id], pose_bone_rotation)
+            pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame_fast(armature, pose_bone.name)
+            correct_animated_rotation = ImportUtils.get_world_rotation(skeleton_data.bone_local_rotations[bone_id], pose_bone_rotation)
             fixed_rotations_by_bone.append(ImportUtils.convert_quaternion_blender_to_unity_quaternion(correct_animated_rotation, self.z_minus_is_forward))
         
         animated_positions_by_bone: list[bpy.types.Vector] = []
@@ -581,16 +609,18 @@ class ExportSkinnedAnim(Operator, ExportHelper):
         
         for frame in range(int(action.frame_range[0]), int(action.frame_range[1])):
             print(f"Assigning transforms for frame {frame}")
+            
+            bpy.context.scene.frame_set(int(frame))
             for bone_id in dynamic_position_bones:
                 pose_bone = pose_bones[bone_id]
-                pose_bone_position = ImportUtils.get_pose_bone_location_at_frame(action, pose_bone.name, float(frame))
-                correct_animated_position = ImportUtils.get_world_position(vec3_bone_local_positions[bone_id], quat_bone_local_rotations[bone_id], pose_bone_position)
+                pose_bone_position = ImportUtils.get_pose_bone_location_at_frame_fast(armature, pose_bone.name)
+                correct_animated_position = ImportUtils.get_world_position(skeleton_data.bone_local_positions[bone_id], skeleton_data.bone_local_rotations[bone_id], pose_bone_position)
                 animated_positions_by_bone.append(ImportUtils.convert_position_blender_to_unity_vector(correct_animated_position, self.z_minus_is_forward))
             
             for bone_id in dynamic_rotation_bones:
                 pose_bone = pose_bones[bone_id]
-                pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame(action, pose_bone.name, float(frame))
-                correct_animated_rotation = ImportUtils.get_world_rotation(quat_bone_local_rotations[bone_id], pose_bone_rotation)
+                pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame_fast(armature, pose_bone.name)
+                correct_animated_rotation = ImportUtils.get_world_rotation(skeleton_data.bone_local_rotations[bone_id], pose_bone_rotation)
                 animated_rotations_by_bone.append(ImportUtils.convert_quaternion_blender_to_unity_quaternion(correct_animated_rotation, self.z_minus_is_forward))
         
         ImportUtils.debug_print(self.debug, f"Animation Data Collected:")
@@ -732,6 +762,10 @@ class ExportSkinnedAnim(Operator, ExportHelper):
             file.seek(file_size_position)
             write_int(file_size - 12)
             file.seek(0, 2)  # Go back to the end of the file
+            
+        bpy.context.view_layer.objects.active.select_set(old_selection)
+        bpy.ops.object.mode_set(mode=old_object_mode)
+        bpy.context.view_layer.objects.active = old_active_object
 
     
         

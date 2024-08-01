@@ -12,6 +12,7 @@ import traceback
 from import_utils import ImportUtils
 import os
 import xml.etree.ElementTree as ET
+from .skeleton import SkeletonData
 
 class ImportSkinnedMesh(Operator, ImportHelper):
     bl_idname = "cbb.skinnedmesh_import"
@@ -44,6 +45,12 @@ class ImportSkinnedMesh(Operator, ImportHelper):
     z_minus_is_forward: BoolProperty(
         name="Z- is forward",
         description="Leave this option checked if you wish to work with Z- being the forward direction in Blender. If false, Z+ is considered forward.",
+        default=True
+    )
+    
+    only_deform_bones: BoolProperty(
+        name="Consider only deform bones (Recommended)",
+        description="Leave this option checked if you wish to consider only deform bones in armatures. Recommended in case you are using rigged armatures that have non-deforming bones",
         default=True
     )
 
@@ -203,8 +210,9 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                 for item_element in model_element.iterfind(".//item"):
                     for item_child in item_element:
                         if item_child.tag == "Mesh":
-                            mesh_attribute: str = item_child.get("value").lstrip("/")
+                            mesh_attribute: str = item_child.get("value")
                             if mesh_attribute is not None:
+                                mesh_attribute = mesh_attribute.lstrip("/")
                                 ImportUtils.debug_print(self.debug, f"Compared files: \n {mesh_attribute.casefold()} \n {ntpath.basename(file_path).casefold()}")
                                 if mesh_attribute.casefold() == ntpath.basename(file_path).casefold():
                                     ImportUtils.debug_print(self.debug, f"Found match in mesh attribute and file name.")
@@ -262,10 +270,13 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                 def import_skinnedmesh(file):
                     filepath: str = self.directory + file.name
                     pure_file_name: str = ntpath.basename(filepath).split(".")[0]
+                    
+                    # file_base_name is used to try and get the appropriate skeleton faster. Sometimes this is not possible, so we resort to searching in the xml files.
                     file_base_name: str = ntpath.basename(file.name).rsplit(".", 1)[0].split("_")[0]
                     ImportUtils.debug_print(self.debug, f"Directory: {self.directory} \n File name: {file.name} \n Pure file name: {pure_file_name} \n File base name: {file_base_name}")
                     skeleton_name = ""
                     target_armature: bpy.types.Armature = None
+                    
                     if self.apply_to_armature_in_selected == False:
                         for obj in bpy.context.scene.objects:
                             if obj.name.casefold() == file_base_name.casefold() and obj.type == "ARMATURE":
@@ -282,18 +293,16 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                     else:
                         for obj in bpy.context.selected_objects:
                             if obj.type == "ARMATURE":
-                                target_armature = obj
-                                break
+                                if target_armature is None:
+                                    target_armature = obj
+                                else:
+                                    self.report({"ERROR"}, f"More than one armature has been found in the current selection. The imported mesh can only be assigned to one armature at a time.")
 
-                    target_armature_bone_names = []
+                    skeleton_data = None
                     if target_armature:
-                        if ImportUtils.is_armature_valid(self, target_armature, False) == True:
-                            target_armature_bone_names = [""] * len(target_armature.data.bones)
-                            for bone in target_armature.data.bones:
-                                bone_id = bone.get("bone_id")
-                                target_armature_bone_names[bone_id] = bone.name
-                        else:
-                            self.report({"INFO"}, f"Armature [{target_armature.name}] was found not valid. Weights won't be assigned to bones, but assigned to vertex groups with their IDs instead.")
+                        skeleton_data = SkeletonData.build_skeleton_from_armature(self, target_armature, self.only_deform_bones, False)
+                        if skeleton_data is None:
+                            self.report({"INFO"}, f"Armature [{target_armature.name}] was found not valid. Weights won't be assigned to bones, but assigned to vertex groups with their IDs instead.") 
                     else:
                         self.report({"INFO"}, f"Target armature of the file [{file.name}] could not be found. Weights won't be assigned to bones, but assigned to vertex groups with their IDs instead.")
                     
@@ -402,7 +411,8 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                                         uv = uvs[mesh.loops[loop_index].vertex_index]
                                         uv_layer[loop_index].uv = uv
                                         
-                            # Trying to search a texture for a standalone mesh will get the first texture assigned, which usually is the _a variation for player characters.
+                            # Trying to search the texture for a standalone mesh will get the first texture assigned, which usually is the _a variation for player characters.
+                            # The alternative for this would be to support mesh loading by reading from xml files directly, instead of manually importing skinned meshes.
                             texture_directory, texture_file_name = ImportSkinnedMesh.get_texture_directory_and_name(opened_file.name, self)
 
                             ImportUtils.debug_print(self.debug, f"texture_directory found: {texture_directory}")
@@ -427,16 +437,14 @@ class ImportSkinnedMesh(Operator, ImportHelper):
                                             break
                                 
                                     if not existing_modifier:
-                                        modifier = obj.modifiers.new(name="Armature", type="ARMATURE")
-                                        modifier.object = target_armature
-                                    else:
-                                        modifier = existing_modifier
+                                        existing_modifier = obj.modifiers.new(name="Armature", type="ARMATURE")
+                                        existing_modifier.object = target_armature
 
                                 for i, (total_bones_with_weights_amount, indices, weight_values) in enumerate(weights):
                                     for bone_index, weight in zip(indices, weight_values):
                                         bone_name = ""
-                                        if target_armature and target_armature_bone_names[bone_index] != "":
-                                            bone_name = target_armature_bone_names[bone_index]
+                                        if target_armature and skeleton_data:
+                                            bone_name = skeleton_data.bone_names[bone_index]
                                         else: 
                                             bone_name = f"{bone_index}"
 
@@ -493,13 +501,25 @@ class ExportSkinnedMesh(Operator, ExportHelper):
 
     debug: BoolProperty(
         name="Debug export",
-        description="Enabling this option will make the exporter print debug data to console.",
+        description="Enabling this option will make the exporter print debug data to console",
         default=False
     )
 
     z_minus_is_forward: BoolProperty(
         name="Z- is forward",
-        description="Leave this option checked if you wish to work with Z- being the forward direction in Blender. If false, Z+ is considered forward.",
+        description="Leave this option checked if you wish to work with Z- being the forward direction in Blender. If false, Z+ is considered forward",
+        default=True
+    )
+    
+    export_only_selected: BoolProperty(
+        name="Export only selected",
+        description="Leave this option checked if you wish export only meshes among currently selected objects",
+        default=False
+    )
+    
+    only_deform_bones: BoolProperty(
+        name="Consider only deform bones (Recommended)",
+        description="Leave this option checked if you wish to consider only deform bones in armatures",
         default=True
     )
 
@@ -507,36 +527,50 @@ class ExportSkinnedMesh(Operator, ExportHelper):
         return self.export_skinnedmeshes(context, self.directory)
 
     def export_skinnedmeshes(self, context, directory):
-        selected_objects = [obj for obj in context.selected_objects if obj.type == "MESH"]
-        if not selected_objects:
-            selected_objects = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"]
+        objects_for_exportation = None
+        if self.export_only_selected == True:
+            objects_for_exportation = [obj for obj in context.selected_objects if obj.type == "MESH"]
+        else:
+            objects_for_exportation = [obj for obj in bpy.context.scene.objects if obj.type == "MESH"]
 
-        if not selected_objects:
-            self.report({"ERROR"}, f"There are no selected objects or objects in the scene with meshes. Aborting exportation.")
+        if not objects_for_exportation:
+            if self.export_only_selected == True:
+                self.report({"ERROR"}, f"There are no objects of type MESH among currently selected objects. Aborting exportation.")
+                
+            else:
+                self.report({"ERROR"}, f"There are no objects of type MESH among scene objects. Aborting exportation.")
             return {"CANCELLED"}
         
-        for scene_mesh in selected_objects:
-            def export_skinnedmesh(mesh_object):
+        for scene_mesh in objects_for_exportation:
+            def export_skinnedmesh(mesh_object: bpy.types.Object):
                 try:
                     filepath = bpy.path.ensure_ext(directory + "/" + mesh_object.name, self.filename_ext)
                     ImportUtils.debug_print(self.debug, f"Exporting mesh [{mesh_object.name}] to file at [{filepath}]")
 
                     mesh_armature: bpy.types.Armature = None
+                    mesh_modifier = None
                     for mod in mesh_object.modifiers:
                         if mod.type == "ARMATURE":
-                            mesh_armature = mod.object
+                            if mesh_modifier is None:
+                                mesh_modifier = mod
+                                if mod.object is not None:
+                                    mesh_armature = mod.object
+                                else:
+                                    self.report({"ERROR"}, f"Object [{mesh_object.name}] has it's armature modifier without a target armature. Aborting this exportation.")
+                                    return
+                            else:
+                                self.report({"ERROR"}, f"Object [{mesh_object.name}] has more than one armature modifier. Aborting this exportation.")
+                                return
 
-                    bone_name_to_id = {}
-                    if mesh_armature:
-                        if ImportUtils.is_armature_valid(self, mesh_armature, True) == False:
-                            self.report({"ERROR"}, f"Armature {mesh_armature.name}, target of [{mesh_object.name}], was found not valid. Aborting this exportation.")
-                            return
-                    else:
-                        self.report({"ERROR"}, f"Target armature in ARMATURE modifier in the object [{mesh_object.name}] could not be found. Aborting this exportation.")
+                    
+                    if mesh_modifier is None:
+                        self.report({"ERROR"}, f"Object [{mesh_object.name}] has no armature modifier. Aborting this exportation.")
                         return
                     
-                    for bone in mesh_armature.data.bones:
-                        bone_name_to_id[bone.name] = bone.get("bone_id")
+                    skeleton_data = SkeletonData.build_skeleton_from_armature(self, mesh_armature, self.only_deform_bones, True)
+                    if skeleton_data is None:
+                        self.report({"ERROR"}, f"Armature [{mesh_armature.name}], target of [{mesh_object.name}], was found not valid. Aborting this exportation.")
+                        return
                         
                     mesh = mesh_object.data
                     vertices = mesh.vertices
@@ -597,7 +631,7 @@ class ExportSkinnedMesh(Operator, ExportHelper):
                         if mesh_armature:
                             for group in groups:
                                 bone_name = mesh_object.vertex_groups[group.group].name
-                                bone_id = bone_name_to_id.get(bone_name, 0)
+                                bone_id = skeleton_data.bone_name_to_id.get(bone_name, 0)
                                 bone_indices.append(bone_id)
                                 weights.append(group.weight)
                             
@@ -621,81 +655,90 @@ class ExportSkinnedMesh(Operator, ExportHelper):
                         return
                 except Exception as e:
                     self.report({"ERROR"}, f"Exception while trying to remap vertices for object [{mesh_object.name}]: {e}")
+                    traceback.print_exc()
                     return
                 try:
                     # Write to file
                     with open(filepath, "wb") as file:
-                        # 1. Write the length in characters of the name of the object (including null terminator)
-                        name = mesh_object.name
-                        name_length = len(name) + 1
-                        file.write(struct.pack("I", name_length)) 
+                        try:
+                            # 1. Write the length in characters of the name of the object (including null terminator)
+                            name = mesh_object.name
+                            name_length = len(name) + 1
+                            file.write(struct.pack("I", name_length)) 
 
-                        # 2. The name of the object as a Unicode string
-                        file.write(name.encode("utf-16-le") + b"\x00\x00")
+                            # 2. The name of the object as a Unicode string
+                            file.write(name.encode("utf-16-le") + b"\x00\x00")
 
-                        # 3. The amount of vertices in the mesh as an integer
-                        vertex_count = len(exporter_vertices)
-                        file.write(struct.pack("I", vertex_count))
+                            # 3. The amount of vertices in the mesh as an integer
+                            vertex_count = len(exporter_vertices)
+                            file.write(struct.pack("I", vertex_count))
 
-                        # 4. The amount of triangles in the mesh as an integer
-                        triangle_count = sum(len(poly) - 2 for poly in new_polygons)
-                        file.write(struct.pack("I", triangle_count*3))
+                            # 4. The amount of triangles in the mesh as an integer
+                            triangle_count = sum(len(poly) - 2 for poly in new_polygons)
+                            file.write(struct.pack("I", triangle_count*3))
 
-                        # 5. Write five consecutive integers: 1, 1, 0, 1, 1
-                        file.write(struct.pack("5I", 1, 1, 0, 1, 1))
+                            # 5. Write five consecutive integers: 1, 1, 0, 1, 1
+                            file.write(struct.pack("5I", 1, 1, 0, 1, 1))
 
-                        # 6. The amount of triangles in the mesh as an integer again
-                        file.write(struct.pack("I", triangle_count*3))
+                            # 6. The amount of triangles in the mesh as an integer again
+                            file.write(struct.pack("I", triangle_count*3))
 
-                        # 7. All the indices that make all the triangles in the mesh
-                        for poly in new_polygons:
-                            if len(poly) == 3:
-                                file.write(struct.pack("3H", *poly))
-                            elif len(poly) == 4:
-                                # If the polygon is a quad, split it into two triangles
-                                file.write(struct.pack("3H", poly[0], poly[1], poly[2]))
-                                file.write(struct.pack("3H", poly[0], poly[2], poly[3]))
-                            else:
-                                # Handle polygons with more than 4 vertices (n-gons)
-                                v0 = poly[0]
-                                for i in range(1, len(poly) - 1):
-                                    file.write(struct.pack("3H", v0, poly[i], poly[i + 1]))
+                            # 7. All the indices that make all the triangles in the mesh
+                            for poly in new_polygons:
+                                if len(poly) == 3:
+                                    file.write(struct.pack("3H", *poly))
+                                elif len(poly) == 4:
+                                    # If the polygon is a quad, split it into two triangles
+                                    file.write(struct.pack("3H", poly[0], poly[1], poly[2]))
+                                    file.write(struct.pack("3H", poly[0], poly[2], poly[3]))
+                                else:
+                                    # Handle polygons with more than 4 vertices (n-gons)
+                                    v0 = poly[0]
+                                    for i in range(1, len(poly) - 1):
+                                        file.write(struct.pack("3H", v0, poly[i], poly[i + 1]))
 
-                        # 8. The amount of vertices in the mesh as an integer again
-                        file.write(struct.pack("I", vertex_count))
+                            # 8. The amount of vertices in the mesh as an integer again
+                            file.write(struct.pack("I", vertex_count))
 
-                        # 9. All the vertices in the mesh (position: float, float, float)
-                        for vertex in exporter_vertices:
-                            converted_position = ImportUtils.convert_position_blender_to_unity_vector(Vector((vertex.x, vertex.y, vertex.z)), self.z_minus_is_forward)
-                            file.write(struct.pack("3f", converted_position.x, converted_position.y, converted_position.z))
+                            # 9. All the vertices in the mesh (position: float, float, float)
+                            for vertex in exporter_vertices:
+                                converted_position = ImportUtils.convert_position_blender_to_unity_vector(Vector((vertex.x, vertex.y, vertex.z)), self.z_minus_is_forward)
+                                file.write(struct.pack("3f", converted_position.x, converted_position.y, converted_position.z))
 
-                        # 10. The amount of normals in the mesh (same as vertices)
-                        file.write(struct.pack("I", vertex_count))
+                            # 10. The amount of normals in the mesh (same as vertices)
+                            file.write(struct.pack("I", vertex_count))
 
-                        # 11. All the normals in the mesh
-                        for normal in exporter_normals:
-                            converted_normal = ImportUtils.convert_position_blender_to_unity_vector(Vector((normal.x, normal.y, normal.z)), self.z_minus_is_forward)
-                            file.write(struct.pack("3f", converted_normal.x, converted_normal.y, converted_normal.z))
+                            # 11. All the normals in the mesh
+                            for normal in exporter_normals:
+                                converted_normal = ImportUtils.convert_position_blender_to_unity_vector(Vector((normal.x, normal.y, normal.z)), self.z_minus_is_forward)
+                                file.write(struct.pack("3f", converted_normal.x, converted_normal.y, converted_normal.z))
 
-                        # 12. The amount of UV coordinates in the mesh (same as vertices)
-                        file.write(struct.pack("I", vertex_count))
+                            # 12. The amount of UV coordinates in the mesh (same as vertices)
+                            file.write(struct.pack("I", vertex_count))
 
-                        # 13. All UV coordinates of the mesh
-                        for uv in exporter_uvs:
-                            file.write(struct.pack("2f", uv[0], -uv[1]))
+                            # 13. All UV coordinates of the mesh
+                            for uv in exporter_uvs:
+                                file.write(struct.pack("2f", uv[0], -uv[1]))
 
-                        # 14. The amount of weights in the mesh (same as vertices)
-                        file.write(struct.pack("I", vertex_count))
+                            # 14. The amount of weights in the mesh (same as vertices)
+                            file.write(struct.pack("I", vertex_count))
 
-                        # 15. All the weights for each vertex
-                        for groups_count, bone_count, bone_indices, weight_count, weights in exporter_weights:
-                            file.write(struct.pack("I", groups_count))  # Number of bones with weight assigned
-                            file.write(struct.pack("I", bone_count))  # Amount of bone indices
-                            file.write(struct.pack(f"{bone_count}I", *bone_indices))  # Bone indices array
-                            file.write(struct.pack("I", weight_count))  # Amount of weights
-                            file.write(struct.pack(f"{weight_count}f", *weights))  # Bone weights array
+                            # 15. All the weights for each vertex
+                            for groups_count, bone_count, bone_indices, weight_count, weights in exporter_weights:
+                                file.write(struct.pack("I", groups_count))  # Number of bones with weight assigned
+                                file.write(struct.pack("I", bone_count))  # Amount of bone indices
+                                file.write(struct.pack(f"{bone_count}I", *bone_indices))  # Bone indices array
+                                file.write(struct.pack("I", weight_count))  # Amount of weights
+                                file.write(struct.pack(f"{weight_count}f", *weights))  # Bone weights array
+                        except Exception as e:
+                            file.close()
+                            os.remove(filepath)
+                            self.report({"ERROR"}, f"Exception while writing to file at [{filepath}]: {e}")
+                            traceback.print_exc()
+                            return
                 except Exception as e:
-                    self.report({"ERROR"}, f"Exception while writing to file at [{filepath}]: {e}")
+                    self.report({"ERROR"}, f"Could not open file for writing at [{filepath}]: {e}")
+                    traceback.print_exc()
                     return
 
             export_skinnedmesh(scene_mesh)
