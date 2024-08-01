@@ -2,7 +2,7 @@ bl_info = {
     "name": "SkinnedMesh, Skeleton, and SkinnedAnim formats",
     "blender": (4, 1, 0),
     "category": "Import-Export",
-    "version": (0, 1, 3),
+    "version": (0, 2, 1),
     "description": "Importer-exporter for SkinnedMesh, Skeleton, and SkinnedAnim files.",
     "author": "Cardboard Box",
     "location": "File > Import-Export",
