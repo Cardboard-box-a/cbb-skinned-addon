@@ -86,7 +86,7 @@ class ImportSkeleton(Operator, ImportHelper):
                         rotation = skeleton_data.bone_absolute_rotations[bone_id]
 
                         # Calculate bone matrices
-                        if skeleton_data.bone_parent_ids[bone_id] == 0xFFFFFFFF:
+                        if skeleton_data.bone_parent_ids[bone_id] == SkeletonData.NO_PARENT:
                             bone_world_matrices[bone_id] = Matrix.Identity(4) @ Matrix.Translation(position) @ rotation.to_matrix().to_4x4()
                             bone_local_matrices[bone_id] = bone_world_matrices[bone_id]
                         else:
@@ -99,7 +99,7 @@ class ImportSkeleton(Operator, ImportHelper):
                             _process_bone(child_id)
 
                     # Find root bones and process recursively
-                    root_bones = [i for i in range(skeleton_data.bone_count) if skeleton_data.bone_parent_ids[i] == 0xFFFFFFFF]
+                    root_bones = [i for i in range(skeleton_data.bone_count) if skeleton_data.bone_parent_ids[i] == SkeletonData.NO_PARENT]
                     for root_bone_id in root_bones:
                         _process_bone(root_bone_id)
 
@@ -116,7 +116,7 @@ class ImportSkeleton(Operator, ImportHelper):
                                 else:
                                     return MIN_BONE_LENGTH
                             # If the bone is not a root bone and has no children, return the parent's length
-                            if skeleton_data.bone_parent_ids[cur_bone_id] != 0xFFFFFFFF:
+                            if skeleton_data.bone_parent_ids[cur_bone_id] != SkeletonData.NO_PARENT:
                                 parent_bone_length = bone_lengths[skeleton_data.bone_parent_ids[cur_bone_id]]
                                 if parent_bone_length > MIN_BONE_LENGTH:
                                     return parent_bone_length
@@ -139,7 +139,7 @@ class ImportSkeleton(Operator, ImportHelper):
                         ImportUtils.debug_print(self.debug, f"Bone [{bones[i].name}] matrix rotation: [{bone_world_matrices[i].to_quaternion()}]")
                         ImportUtils.debug_print(self.debug, f"Bone [{bones[i].name}] as edit_bone matrix rotation: [{edit_bone.matrix.to_quaternion()}]")
                         
-                        if skeleton_data.bone_parent_ids[i] != 0xFFFFFFFF and i != 0:
+                        if skeleton_data.bone_parent_ids[i] != SkeletonData.NO_PARENT and i != 0:
                             # These bones are manually overriden in the game to have no parent and their animations are given in world coordinates, so we fix these cases manually.
                             if bones[i].name.casefold() != "staffjoint2" and bones[i].name.casefold() != "r_handend1" and bones[i].name.casefold() != "l_handend1":
                                 bones[i].parent = bones[skeleton_data.bone_parent_ids[i]]
@@ -261,6 +261,7 @@ class ExportSkeleton(Operator, ExportHelper):
 
 
 class SkeletonData:
+    NO_PARENT: int = -1
     """
     Class that holds convenient skeleton information. Do note that absolute in the name of transform variables refers to them being 
     referent to the armature only, as if the armature transform was the center of the world.
@@ -296,34 +297,40 @@ class SkeletonData:
 
                 f.seek(12, 1)
 
-                skeletonData.bone_parent_ids = list(struct.unpack("<{}I".format(skeletonData.bone_count), f.read(4 * skeletonData.bone_count)))
+                skeletonData.bone_parent_ids = list(struct.unpack("<{}i".format(skeletonData.bone_count), f.read(4 * skeletonData.bone_count)))
 
                 # Some skeletons have the first bone, which is the root bone, with a parent to itself. That's obviously wrong, so we fix it manually.
                 # The first bone is also usually treated as the root bone and ignores any attempts of parenting. That's why it's important to always have
                 # the root bone of the skeleton with a bone_id 0 property when exporting.
-                skeletonData.bone_parent_ids[0] = 0xFFFFFFFF
+                skeletonData.bone_parent_ids[0] = SkeletonData.NO_PARENT
 
                 f.seek(12, 1)
 
                 for _ in range(skeletonData.bone_count):
                     ImportUtils.debug_print(self.debug, f"Bone name: [{skeletonData.bone_names[_]}]. ID and parent ID: [{_}] | [{skeletonData.bone_parent_ids[_]}]")
+                    
                     bone_position: tuple[float, float, float] = struct.unpack("<3f", f.read(12))
                     bone_scale: tuple[float, float, float] = struct.unpack("<3f", f.read(12))
                     bone_rotation: tuple[float, float, float, float] = struct.unpack("<4f", f.read(16))
+                    
                     ImportUtils.debug_print(self.debug, f"Bone position (before conversion): [{bone_position}]")
                     ImportUtils.debug_print(self.debug, f"Bone scale (no conversion is done): [{bone_scale}]")
                     ImportUtils.debug_print(self.debug, f"Bone rotation (before conversion): [{bone_rotation}]")
+                    
                     bone_position = ImportUtils.convert_position_unity_to_blender(bone_position[0], bone_position[1], bone_position[2], self.z_minus_is_forward)
                     bone_rotation = ImportUtils.convert_quaternion_unity_to_blender(bone_rotation[0], bone_rotation[1], bone_rotation[2], bone_rotation[3], self.z_minus_is_forward)
+                    
                     ImportUtils.debug_print(self.debug, f"Bone position (after conversion): [{bone_position}]")
                     ImportUtils.debug_print(self.debug, f"Bone rotation (after conversion): [{bone_rotation}]")
+                    
                     skeletonData.bone_absolute_positions.append(bone_position)
                     skeletonData.bone_absolute_scales.append(mathutils.Vector(bone_scale))
                     skeletonData.bone_absolute_rotations.append(bone_rotation)
                 
                 for bone_id in range(skeletonData.bone_count):
                     ImportUtils.debug_print(self.debug, f"Bone name: [{skeletonData.bone_names[bone_id]}], local data:")
-                    if skeletonData.bone_parent_ids[bone_id] != 0xFFFFFFFF:
+                    
+                    if skeletonData.bone_parent_ids[bone_id] != SkeletonData.NO_PARENT:
                         parent_bone_id = skeletonData.bone_parent_ids[bone_id]
                         skeletonData.bone_local_positions.append(ImportUtils.get_local_position(skeletonData.bone_absolute_positions[parent_bone_id], skeletonData.bone_absolute_rotations[parent_bone_id], skeletonData.bone_absolute_positions[bone_id]))
                         skeletonData.bone_local_rotations.append(ImportUtils.get_local_rotation(skeletonData.bone_absolute_rotations[parent_bone_id], skeletonData.bone_absolute_rotations[bone_id]))
@@ -368,7 +375,8 @@ class SkeletonData:
                     file.write(struct.pack('I', 0xFFFFFFFF))
                     
                     for parent_id in skeleton_data.bone_parent_ids:
-                        file.write(struct.pack('I', parent_id))
+                        print(parent_id)
+                        file.write(struct.pack('i', parent_id))
                     
                     file.write(struct.pack('I', 50331904))
                     file.write(struct.pack('I', 40 * skeleton_data.bone_count))
@@ -426,12 +434,14 @@ class SkeletonData:
         skeleton_data.skeleton_name = armature_object.name
         skeleton_data.bone_count = len(bones)
         skeleton_data.bone_names = [""] * skeleton_data.bone_count
-        skeleton_data.bone_parent_ids = [-1] * skeleton_data.bone_count
+        skeleton_data.bone_parent_ids = [SkeletonData.NO_PARENT] * skeleton_data.bone_count
         skeleton_data.bone_absolute_positions = [Vector((0.0, 0.0, 0.0))] * skeleton_data.bone_count
         skeleton_data.bone_absolute_scales = [Vector((0.0, 0.0, 0.0))] * skeleton_data.bone_count
         skeleton_data.bone_absolute_rotations = [Quaternion((0.0, 0.0, 0.0, 0.0))] * skeleton_data.bone_count
         skeleton_data.bone_local_positions = [Vector((0.0, 0.0, 0.0))] * skeleton_data.bone_count
         skeleton_data.bone_local_rotations = [Quaternion((0.0, 0.0, 0.0, 0.0))] * skeleton_data.bone_count
+        
+        existing_bone_ids = set()
         
         base_bone_id = None
         for bone in bones:
@@ -467,6 +477,12 @@ class SkeletonData:
             else:
                 self.report({"ERROR"}, f"Bone [{bone_name}] of armature [{armature_object.name}] is missing the bone_id property.")
                 return
+            
+            if bone_id in existing_bone_ids:
+                self.report({"ERROR"}, f"Bone [{bone_name}] of armature [{armature_object.name}] has the same bone_id of another bone. Other bone with the same bone_id: {skeleton_data.bone_names[bone_id]}")
+                return
+            
+            existing_bone_ids.add(bone_id)
             
             skeleton_data.bone_names[bone_id] = bone_name
             skeleton_data.bone_name_to_id[bone_name] = bone_id
@@ -504,7 +520,7 @@ class SkeletonData:
             else:
                 skeleton_data.bone_local_positions[bone_id] = edit_bone_position
                 skeleton_data.bone_local_rotations[bone_id] = edit_bone_rotation
-                skeleton_data.bone_parent_ids[bone_id] = 0xFFFFFFFF
+                skeleton_data.bone_parent_ids[bone_id] = SkeletonData.NO_PARENT
                 
         ImportUtils.debug_print(print_debug, f" has head bone: {has_Head_bone}")
         ImportUtils.debug_print(print_debug, f" base bone id: {base_bone_id}")
@@ -516,7 +532,7 @@ class SkeletonData:
             if base_bone_id is None:
                 self.report({"ERROR"}, f"Armature [{armature_object.name}] is missing a bone named 'Base'(case not considered) or 'Root'(case not considered), which is necessary for exportation.")
                 return
-            if skeleton_data.bone_parent_ids[base_bone_id] != 0xFFFFFFFF:
+            if skeleton_data.bone_parent_ids[base_bone_id] != SkeletonData.NO_PARENT:
                 self.report({"ERROR"}, f"Bone [{skeleton_data.bone_names[base_bone_id]}] of armature [{armature_object.name}] is marked as the root bone but has a parent, which should not happen.")
                 return
         return skeleton_data

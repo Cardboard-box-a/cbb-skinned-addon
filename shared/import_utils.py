@@ -143,6 +143,28 @@ class ImportUtils(Operator):
             return pose_bone.rotation_quaternion
         else:
             return None
+        
+    @staticmethod
+    def get_pose_bone_location_at_frame_fcurves(action: bpy.types.Action, bone_name: str, frame: float) -> mathutils.Vector:
+        location_collection = [0.0, 0.0, 0.0]
+        for i in range(3):
+            data_path = f'pose.bones["{bone_name}"].location'
+            fcurve = action.fcurves.find(data_path, index = i)
+            if fcurve:
+                location_collection[i] = fcurve.evaluate(frame)
+
+        return Vector((location_collection[0], location_collection[1], location_collection[2]))
+    
+    @staticmethod
+    def get_pose_bone_rotation_at_frame_fcurves(action: bpy.types.Action, bone_name: str, frame: float) -> mathutils.Quaternion:
+        rotation_collection = [0.0, 0.0, 0.0, 0.0]
+        for i in range(4):
+            data_path = f'pose.bones["{bone_name}"].rotation_quaternion'
+            fcurve = action.fcurves.find(data_path, index = i)
+            if fcurve:
+                rotation_collection[i] = fcurve.evaluate(frame)
+
+        return Quaternion((rotation_collection[0], rotation_collection[1], rotation_collection[2], rotation_collection[3]))
     
     @staticmethod
     def convert_position_unity_to_blender(pos_x, pos_y, pos_z, z_minus_is_forward) -> Vector:
@@ -234,11 +256,8 @@ class ImportUtils(Operator):
     
     @staticmethod
     def rebuild_armature_bone_ids(self: Operator, armature: bpy.types.Armature, only_deform_bones: bool, print_debug = False):
-        bones: list[bpy.types.Bone] = None
-        if only_deform_bones:
-            bones = [bone for bone in armature.data.bones if bone.use_deform]
-        else:
-            bones = armature.data.bones
+        bones: list[bpy.types.Bone] = [bone for bone in armature.data.bones if bone.use_deform] if only_deform_bones else armature.data.bones
+        
         ImportUtils.debug_print(print_debug, f"Rebuilding bone ids for armature [{armature.name}]. Only deform bones option: {only_deform_bones}")
         ImportUtils.debug_print(print_debug, f"Amount of detected bones in armature [{armature.name}]: {len(bones)}")
         
@@ -252,17 +271,23 @@ class ImportUtils(Operator):
             self.report({"ERROR"}, f"Armature [{armature.name}] is missing a bone named 'Base'(case not considered) or 'Root'(case not considered), which is necessary for exportation.")
             return False
         base_bone["bone_id"] = 0
-
-        # Check for invalid bone_id values and reassign if necessary
-        next_id: int = 0
+        
+        processed_bone_ids = set()
+        existing_ids.add(0)
+        next_id: int = 1
+        
         for bone in bones:
             bone_id = bone.get("bone_id")
-            if bone_id is None or bone_id < 0 or bone_id >= len(bones):
-                while next_id in existing_ids:
+            ImportUtils.debug_print(print_debug, f"Bone [{bone.name}] bone_id: {bone_id}")
+            if bone_id is None or bone_id < 0 or bone_id >= len(bones) or bone_id in processed_bone_ids:
+                while next_id in existing_ids or next_id in processed_bone_ids:
                     next_id += 1
                 bone["bone_id"] = next_id
                 ImportUtils.debug_print(print_debug, f"Bone [{bone.name}] got reassigned the id [{next_id}]")
                 existing_ids.add(next_id)
+                processed_bone_ids.add(next_id)
+            else:
+                processed_bone_ids.add(bone_id)
 
         return True
     

@@ -233,10 +233,10 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                             fixed_rotations_by_bone.append(ImportUtils.convert_quaternion_unity_to_blender(x, y, z, w, self.z_minus_is_forward))
 
                         for i in range(anim_bone_amount):
-                            inverse_dynamic_pos_bones_map.append(-1)
-                            inverse_dynamic_rot_bones_map.append(-1)
-                            inverse_static_pos_bones_map.append(-1)
-                            inverse_static_rot_bones_map.append(-1)
+                            inverse_dynamic_pos_bones_map.append(SkeletonData.NO_PARENT)
+                            inverse_dynamic_rot_bones_map.append(SkeletonData.NO_PARENT)
+                            inverse_static_pos_bones_map.append(SkeletonData.NO_PARENT)
+                            inverse_static_rot_bones_map.append(SkeletonData.NO_PARENT)
                         # Read BoneMapping
                         f.seek(8, 1)  # Skip BoneMapHeader
                         for i in range(anim_bone_amount):
@@ -305,7 +305,7 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                             current_bone_name = skeleton_data.bone_names[bone_id]
                             parentboneid = skeleton_data.bone_parent_ids[bone_id]
                             loc = mathutils.Vector((0.0, 0.0, 0.0))
-                            if parentboneid == 0xFFFFFFFF or bone_id == 0:
+                            if parentboneid == SkeletonData.NO_PARENT or bone_id == 0:
                                 loc = ImportUtils.get_local_position(
                                     skeleton_data.bone_absolute_positions[bone_id],
                                     skeleton_data.bone_absolute_rotations[bone_id],
@@ -332,7 +332,7 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                             current_bone_name = skeleton_data.bone_names[bone_id]
                             parentboneid = skeleton_data.bone_parent_ids[bone_id]
                             rot = mathutils.Quaternion((1,0,0,0))
-                            if parentboneid == 0xFFFFFFFF or bone_id == 0:
+                            if parentboneid == SkeletonData.NO_PARENT or bone_id == 0:
                                 rot = skeleton_data.bone_absolute_rotations[bone_id].conjugated() @ fixed_rotations_by_bone[iterator]
                             else:
                                 if are_positions_relative_to_parent == True:
@@ -354,7 +354,7 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                                 parentboneid = skeleton_data.bone_parent_ids[bone_id]
                                 idx = frame * number_of_bone_positions_animated + iterator
                                 loc = mathutils.Vector((0.0, 0.0, 0.0))
-                                if parentboneid == 0xFFFFFFFF or bone_id == 0:
+                                if parentboneid == SkeletonData.NO_PARENT or bone_id == 0:
                                     loc = ImportUtils.get_local_position(
                                     skeleton_data.bone_absolute_positions[bone_id] ,
                                     skeleton_data.bone_absolute_rotations[bone_id],
@@ -378,7 +378,7 @@ class ImportSkinnedAnim(Operator, ImportHelper):
                                 rot = mathutils.Quaternion((1,0,0,0))
                                 idx = frame * number_of_bone_rotations_animated + iterator
 
-                                if parentboneid == 0xFFFFFFFF or bone_id == 0:
+                                if parentboneid == SkeletonData.NO_PARENT or bone_id == 0:
                                     rot = skeleton_data.bone_absolute_rotations[bone_id].conjugated() @ animated_rotations_by_bone[idx]
                                 else:
                                     if are_positions_relative_to_parent == True:
@@ -501,7 +501,7 @@ class ExportSkinnedAnim(Operator, ExportHelper):
             return [armature.animation_data.action] if armature.animation_data and armature.animation_data.action else []
         
     @staticmethod
-    def export_action(self: "ExportSkinnedAnim", armature, action: Action, directory: str, filename_ext: str, only_deform_bones: bool):
+    def export_action(self: "ExportSkinnedAnim", armature: bpy.types.Object, action: Action, directory: str, filename_ext: str, only_deform_bones: bool):
         print(f"Exporting action {action.name} for armature {armature.name}")
         old_active_object = bpy.context.view_layer.objects.active
         old_selection = bpy.context.view_layer.objects.active.select_get()
@@ -524,64 +524,64 @@ class ExportSkinnedAnim(Operator, ExportHelper):
         else:
             bones: list[bpy.types.Bone] = sorted(armature.data.bones, key=lambda bone: bone["bone_id"])
         
-        pose_bones: list[bpy.types.PoseBone] = []
-        for bone in bones:
-            pose_bones.append(armature.pose.bones[bone.name])
+        pose_bones = [armature.pose.bones[bone.name] for bone in bones]
 
+        original_action = armature.animation_data.action
+        
+        bpy.ops.nla.bake(
+            frame_start=int(action.frame_range[0]),
+            frame_end=int(action.frame_range[1]),
+            only_selected=False,
+            visual_keying=True,
+            clear_constraints=False,
+            use_current_action=False,
+            bake_types={'POSE'}
+        )
+        
+        baked_action = armature.animation_data.action
+        
         animation_bone_amount = len(pose_bones)
-        total_frames = int(action.frame_range[1] - action.frame_range[0])
+        initial_frame = baked_action.frame_range[0]
+        last_frame = baked_action.frame_range[1]
+        # +1 to include the last frame
+        total_frames = int(last_frame+1 - initial_frame)
         
         skeleton_data = SkeletonData.build_skeleton_from_armature(self, armature, only_deform_bones, True)
-        """
-        vec3_bone_local_positions = [mathutils.Vector((0,0,0))] * animation_bone_amount
-        quat_bone_local_rotations = [mathutils.Quaternion.identity] * animation_bone_amount
-        for bone in bones:
-            bone_id = bone["bone_id"]
-            edit_bone_position , edit_bone_rotation = ImportUtils.decompose_blender_matrix_position_rotation(bone.matrix_local)
-
-            if bone.parent is not None:
-                parent_edit_bone_position , parent_edit_bone_rotation = ImportUtils.decompose_blender_matrix_position_rotation(bone.parent.matrix_local)
-                vec3_bone_local_positions[bone_id] = ImportUtils.get_local_position(parent_edit_bone_position, parent_edit_bone_rotation, edit_bone_position)
-                quat_bone_local_rotations[bone_id] = ImportUtils.get_local_rotation(parent_edit_bone_rotation, edit_bone_rotation)
-            else:
-                vec3_bone_local_positions[bone_id] = edit_bone_position
-                quat_bone_local_rotations[bone_id] = edit_bone_rotation
-        """
         dynamic_position_bones: list[int] = []
         static_position_bones: list[int] = []
         dynamic_rotation_bones: list[int] = []
         static_rotation_bones: list[int] = []
         used_in_frames_positions_flag: list[int] = []
         used_in_frames_rotations_flag: list[int] = []
-
+        
         for bone in bones:
             bone_id: int = bone["bone_id"]
             bone_path = f'pose.bones["{bone.name}"]'
-            has_position_keys: bool = any(
-                fcurve.data_path == f'{bone_path}.location' and any(kp.co[0] != 0 for kp in fcurve.keyframe_points)
-                for fcurve in action.fcurves
+            
+            position_key_values = set(
+                kp.co[1]
+                for fcurve in baked_action.fcurves
+                if fcurve.data_path == f'{bone_path}.location'
+                for kp in fcurve.keyframe_points
             )
-            has_rotation_keys: bool = any(
-                fcurve.data_path == f'{bone_path}.rotation_quaternion' and any(kp.co[0] != 0 for kp in fcurve.keyframe_points)
-                for fcurve in action.fcurves
+            has_position_keyframes = len(position_key_values) > 1
+            
+            rotation_key_values = set(
+                kp.co[1]
+                for fcurve in baked_action.fcurves
+                if fcurve.data_path == f'{bone_path}.rotation_quaternion'
+                for kp in fcurve.keyframe_points
             )
-            position_keys_at_zero: bool = any(
-                fcurve.data_path == f'{bone_path}.location' and any(kp.co[0] == 0 for kp in fcurve.keyframe_points)
-                for fcurve in action.fcurves
-            )
-            rotation_keys_at_zero: bool = any(
-                fcurve.data_path == f'{bone_path}.rotation_quaternion' and any(kp.co[0] == 0 for kp in fcurve.keyframe_points)
-                for fcurve in action.fcurves
-            )
-
-            if has_position_keys and position_keys_at_zero:
+            has_rotation_keyframes = len(rotation_key_values) > 1
+            
+            if has_position_keyframes:
                 dynamic_position_bones.append(bone_id)
                 used_in_frames_positions_flag.append(0xF0)
             else:
                 static_position_bones.append(bone_id)
                 used_in_frames_positions_flag.append(0)
 
-            if has_rotation_keys and rotation_keys_at_zero:
+            if has_rotation_keyframes:
                 dynamic_rotation_bones.append(bone_id)
                 used_in_frames_rotations_flag.append(0xF0)
             else:
@@ -591,43 +591,44 @@ class ExportSkinnedAnim(Operator, ExportHelper):
 
         fixed_positions_by_bone: list[bpy.types.Vector] = []
         fixed_rotations_by_bone: list[bpy.types.Quaternion] = []
-        bpy.context.scene.frame_set(0)
+        
         for bone_id in static_position_bones:
             pose_bone = pose_bones[bone_id]
-            pose_bone_position = ImportUtils.get_pose_bone_location_at_frame_fast(armature, pose_bone.name)
+            pose_bone_position = ImportUtils.get_pose_bone_location_at_frame_fcurves(baked_action, pose_bone.name, initial_frame)
             correct_animated_position = ImportUtils.get_world_position(skeleton_data.bone_local_positions[bone_id], skeleton_data.bone_local_rotations[bone_id], pose_bone_position)
             fixed_positions_by_bone.append(ImportUtils.convert_position_blender_to_unity_vector(correct_animated_position, self.z_minus_is_forward))
         
         for bone_id in static_rotation_bones:
             pose_bone = pose_bones[bone_id]
-            pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame_fast(armature, pose_bone.name)
+            pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame_fcurves(baked_action, pose_bone.name, initial_frame)
             correct_animated_rotation = ImportUtils.get_world_rotation(skeleton_data.bone_local_rotations[bone_id], pose_bone_rotation)
             fixed_rotations_by_bone.append(ImportUtils.convert_quaternion_blender_to_unity_quaternion(correct_animated_rotation, self.z_minus_is_forward))
         
         animated_positions_by_bone: list[bpy.types.Vector] = []
         animated_rotations_by_bone: list[bpy.types.Quaternion] = []
         
-        for frame in range(int(action.frame_range[0]), int(action.frame_range[1])):
+        ImportUtils.debug_print(self.debug,f"Animation [{action.name}] frame range: {int(action.frame_range[0])} - {int(action.frame_range[1])}")
+        
+        for frame in range(int(action.frame_range[0]), int(action.frame_range[1]+1)):
             print(f"Assigning transforms for frame {frame}")
             
-            bpy.context.scene.frame_set(int(frame))
             for bone_id in dynamic_position_bones:
                 pose_bone = pose_bones[bone_id]
-                pose_bone_position = ImportUtils.get_pose_bone_location_at_frame_fast(armature, pose_bone.name)
+                pose_bone_position = ImportUtils.get_pose_bone_location_at_frame_fcurves(baked_action, pose_bone.name, frame)
                 correct_animated_position = ImportUtils.get_world_position(skeleton_data.bone_local_positions[bone_id], skeleton_data.bone_local_rotations[bone_id], pose_bone_position)
                 animated_positions_by_bone.append(ImportUtils.convert_position_blender_to_unity_vector(correct_animated_position, self.z_minus_is_forward))
             
             for bone_id in dynamic_rotation_bones:
                 pose_bone = pose_bones[bone_id]
-                pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame_fast(armature, pose_bone.name)
+                pose_bone_rotation = ImportUtils.get_pose_bone_rotation_at_frame_fcurves(baked_action, pose_bone.name, frame)
                 correct_animated_rotation = ImportUtils.get_world_rotation(skeleton_data.bone_local_rotations[bone_id], pose_bone_rotation)
                 animated_rotations_by_bone.append(ImportUtils.convert_quaternion_blender_to_unity_quaternion(correct_animated_rotation, self.z_minus_is_forward))
         
-        ImportUtils.debug_print(self.debug, f"Animation Data Collected:")
-        ImportUtils.debug_print(self.debug, f"Animated Rotations By Bone:\n{animated_rotations_by_bone}")
-        ImportUtils.debug_print(self.debug, f"Animated Positions By Bone:\n{animated_positions_by_bone}")
-        ImportUtils.debug_print(self.debug, f"Fixed Positions By Bone:\n{fixed_positions_by_bone}")
-        ImportUtils.debug_print(self.debug, f"Fixed Rotations By Bone:\n{fixed_rotations_by_bone}")
+        #ImportUtils.debug_print(self.debug, f"Animation Data Collected:")
+        #ImportUtils.debug_print(self.debug, f"Animated Rotations By Bone:\n{animated_rotations_by_bone}")
+        #ImportUtils.debug_print(self.debug, f"Animated Positions By Bone:\n{animated_positions_by_bone}")
+        #ImportUtils.debug_print(self.debug, f"Fixed Positions By Bone:\n{fixed_positions_by_bone}")
+        #ImportUtils.debug_print(self.debug, f"Fixed Rotations By Bone:\n{fixed_rotations_by_bone}")
         ImportUtils.debug_print(self.debug, f"Bone Maps:")
         ImportUtils.debug_print(self.debug, f"Dynamic Position Bones:\n{dynamic_position_bones}")
         ImportUtils.debug_print(self.debug, f"Static Position Bones:\n{static_position_bones}")
@@ -762,7 +763,10 @@ class ExportSkinnedAnim(Operator, ExportHelper):
             file.seek(file_size_position)
             write_int(file_size - 12)
             file.seek(0, 2)  # Go back to the end of the file
-            
+        
+        armature.animation_data.action = original_action
+        
+        bpy.data.actions.remove(baked_action, do_unlink=True)
         bpy.context.view_layer.objects.active.select_set(old_selection)
         bpy.ops.object.mode_set(mode=old_object_mode)
         bpy.context.view_layer.objects.active = old_active_object
